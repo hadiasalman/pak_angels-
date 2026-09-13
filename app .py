@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
-from typing import Dict, List, Tuple
-import time
+from typing import Dict, List
 
 # ============================================================================
 # PAGE CONFIG & STYLING
@@ -306,13 +304,11 @@ def init_session_state():
         st.session_state.settings = {
             'student_name': 'Hadia Salman',
             'degree': 'BS Artificial Intelligence',
-            'target_gpa': 0.0,
-            'weekly_study_hours': 0.0,
+            'target_gpa': 3.8,
+            'weekly_study_hours': 15.0,
             'dark_mode': False,
             'sound_effects': True
         }
-    if 'pomodoro_sessions' not in st.session_state:
-        st.session_state.pomodoro_sessions = []
 
 init_session_state()
 
@@ -399,28 +395,20 @@ def dashboard_page():
     
     st.divider()
     
-    # Statistics Row
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("Weekly Study Hours")
         weekly = calculate_weekly_study_hours(st.session_state.study_sessions)
         st.metric("Target", f"{st.session_state.settings['weekly_study_hours']:.0f}h", 
-                 delta=f"{weekly:.1f}h actual")
+                  delta=f"{weekly:.1f}h actual")
         
-        # Study progress chart
         if st.session_state.study_sessions:
             dates = [s.get('date', '') for s in st.session_state.study_sessions[-7:]]
             hours = [s.get('duration_minutes', 0)/60 for s in st.session_state.study_sessions[-7:]]
             
-            fig = go.Figure(data=[go.Bar(x=dates, y=hours)])
-            fig.update_layout(
-                title="Study Sessions (Last 7 Days)",
-                height=300,
-                showlegend=False,
-                margin=dict(l=0, r=0, t=30, b=0)
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            df_chart = pd.DataFrame({'Date': dates, 'Hours': hours})
+            st.bar_chart(df_chart.set_index('Date'))
     
     with col2:
         st.subheader("Assignment Status")
@@ -430,11 +418,8 @@ def dashboard_page():
                 status = a.get('status', 'Not Started')
                 statuses[status] = statuses.get(status, 0) + 1
             
-            fig = go.Figure(data=[
-                go.Pie(labels=list(statuses.keys()), values=list(statuses.values()))
-            ])
-            fig.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig, use_container_width=True)
+            df_status = pd.DataFrame(list(statuses.items()), columns=['Status', 'Count'])
+            st.bar_chart(df_status.set_index('Status'))
         else:
             st.info("No assignments yet. Add some to see the breakdown!")
     
@@ -442,18 +427,13 @@ def dashboard_page():
         st.subheader("Grade Distribution")
         gpa_info = calculate_gpa(st.session_state.courses)
         if gpa_info['grade_distribution']:
-            fig = go.Figure(data=[
-                go.Bar(x=list(gpa_info['grade_distribution'].keys()), 
-                      y=list(gpa_info['grade_distribution'].values()))
-            ])
-            fig.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig, use_container_width=True)
+            df_grades = pd.DataFrame(list(gpa_info['grade_distribution'].items()), columns=['Grade', 'Count'])
+            st.bar_chart(df_grades.set_index('Grade'))
         else:
             st.info("Add courses to see grade distribution!")
     
     st.divider()
     
-    # Motivational Quote
     quote = MOTIVATIONAL_QUOTES[datetime.now().day % len(MOTIVATIONAL_QUOTES)]
     st.markdown(f"""
     <div class="card">
@@ -503,7 +483,6 @@ def assignments_page():
     if st.session_state.assignments:
         st.subheader(f"Total Assignments: {len(st.session_state.assignments)}")
         
-        # Filter options
         col1, col2, col3 = st.columns(3)
         with col1:
             filter_subject = st.multiselect("Filter by Subject", 
@@ -513,9 +492,8 @@ def assignments_page():
                                            ["Low", "Medium", "High", "Urgent"])
         with col3:
             filter_status = st.multiselect("Filter by Status",
-                                         ["Not Started", "In Progress", "Submitted", "Graded"])
+                                          ["Not Started", "In Progress", "Submitted", "Graded"])
         
-        # Display assignments
         for i, assignment in enumerate(st.session_state.assignments):
             should_display = True
             if filter_subject and assignment['subject'] not in filter_subject:
@@ -619,7 +597,6 @@ def study_planner_page():
     if st.session_state.study_sessions:
         st.subheader(f"Total Sessions: {len(st.session_state.study_sessions)}")
         
-        # Weekly stats
         col1, col2, col3 = st.columns(3)
         weekly_hours = calculate_weekly_study_hours(st.session_state.study_sessions)
         with col1:
@@ -632,7 +609,6 @@ def study_planner_page():
         
         st.divider()
         
-        # Display sessions
         for i, session in enumerate(reversed(st.session_state.study_sessions)):
             col1, col2 = st.columns([4, 1])
             with col1:
@@ -714,378 +690,101 @@ def gpa_calculator_page():
         st.divider()
         
         for i in range(len(st.session_state.courses)):
-            col1, col2, col3 = st.columns([3, 1, 1])
+            col1, col2 = st.columns([4, 1])
             course = st.session_state.courses[i]
             with col1:
-                st.write(f"{course['course_name']} - {course['grade']}")
+                st.write(f"**{course['course_name']}** — Grade: {course['grade']} ({course['credit_hours']} Credits)")
             with col2:
-                if st.button("✏️", key=f"edit_course_{i}"):
-                    pass
-            with col3:
                 if st.button("🗑️", key=f"delete_course_{i}"):
                     st.session_state.courses.pop(i)
                     st.rerun()
     else:
-        st.info("No courses added yet. Add courses to calculate your GPA!")
+        st.info("No courses added yet. Click 'Add Course' to start calculating your GPA!")
 
 # ============================================================================
-# PAGE: PROJECTS
-# ============================================================================
-
-def projects_page():
-    st.markdown('<h1 class="section-title">🚀 Projects Portfolio</h1>', unsafe_allow_html=True)
-    
-    if st.button("➕ Add Project"):
-        st.session_state.show_project_form = not st.session_state.get('show_project_form', False)
-    
-    if st.session_state.get('show_project_form', False):
-        st.markdown("### Add AI Project")
-        with st.form("project_form"):
-            name = st.text_input("Project Name")
-            description = st.text_area("Description")
-            technologies = st.multiselect("Technologies", 
-                                         ["Python", "TensorFlow", "PyTorch", "Keras", "Scikit-learn", 
-                                          "NLP", "Computer Vision", "Reinforcement Learning"])
-            github_url = st.text_input("GitHub URL (optional)")
-            demo_url = st.text_input("Demo URL (optional)")
-            status = st.selectbox("Status", ["Idea", "In Progress", "Completed", "Published"])
-            start_date = st.date_input("Start Date")
-            
-            if st.form_submit_button("Add Project"):
-                st.session_state.projects.append({
-                    'id': f"proj-{len(st.session_state.projects)}",
-                    'name': name,
-                    'description': description,
-                    'technologies': technologies,
-                    'github_url': github_url,
-                    'demo_url': demo_url,
-                    'status': status,
-                    'start_date': str(start_date)
-                })
-                st.session_state.show_project_form = False
-                st.success("Project added!")
-                st.rerun()
-    
-    st.divider()
-    
-    if st.session_state.projects:
-        st.subheader(f"Total Projects: {len(st.session_state.projects)}")
-        
-        for i, project in enumerate(st.session_state.projects):
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.markdown(f"""
-                <div class="card">
-                    <h4>{project['name']}</h4>
-                    <p>{project['description']}</p>
-                    <p><strong>Status:</strong> {project['status']} | <strong>Started:</strong> {project['start_date']}</p>
-                    <p><strong>Tech:</strong> {", ".join(project['technologies'])}</p>
-                    {'<p><a href="' + project['github_url'] + '">GitHub</a> | ' if project.get('github_url') else ''}
-                    {'<a href="' + project['demo_url'] + '">Demo</a></p>' if project.get('demo_url') else ''}
-                </div>
-                """, unsafe_allow_html=True)
-            with col2:
-                if st.button("🗑️", key=f"delete_project_{i}"):
-                    st.session_state.projects.pop(i)
-                    st.rerun()
-    else:
-        st.info("No projects yet. Start building and showcase your work!")
-
-# ============================================================================
-# PAGE: CERTIFICATES
-# ============================================================================
-
-def certificates_page():
-    st.markdown('<h1 class="section-title">🏆 Certificates & Credentials</h1>', unsafe_allow_html=True)
-    
-    if st.button("➕ Add Certificate"):
-        st.session_state.show_cert_form = not st.session_state.get('show_cert_form', False)
-    
-    if st.session_state.get('show_cert_form', False):
-        st.markdown("### Add Certificate")
-        with st.form("cert_form"):
-            name = st.text_input("Certificate Name")
-            platform = st.selectbox("Platform", ["Coursera", "edX", "Udacity", "Google", "AWS", "Azure", "Other"])
-            completion_date = st.date_input("Completion Date")
-            skills = st.multiselect("Skills Learned", 
-                                   ["Python", "Machine Learning", "Deep Learning", "NLP", "Computer Vision",
-                                    "Data Analysis", "Statistics", "Web Development"])
-            credential_url = st.text_input("Credential URL (optional)")
-            
-            if st.form_submit_button("Add Certificate"):
-                st.session_state.certificates.append({
-                    'id': f"cert-{len(st.session_state.certificates)}",
-                    'name': name,
-                    'platform': platform,
-                    'completion_date': str(completion_date),
-                    'skills': skills,
-                    'credential_url': credential_url
-                })
-                st.session_state.show_cert_form = False
-                st.success("Certificate added! 🎉")
-                st.rerun()
-    
-    st.divider()
-    
-    if st.session_state.certificates:
-        st.subheader(f"Total Certificates: {len(st.session_state.certificates)}")
-        
-        for i, cert in enumerate(st.session_state.certificates):
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.markdown(f"""
-                <div class="card">
-                    <h4>{cert['name']}</h4>
-                    <p><strong>Platform:</strong> {cert['platform']} | <strong>Completed:</strong> {cert['completion_date']}</p>
-                    <p><strong>Skills:</strong> {", ".join(cert['skills'])}</p>
-                    {'<p><a href="' + cert['credential_url'] + '">View Credential</a></p>' if cert.get('credential_url') else ''}
-                </div>
-                """, unsafe_allow_html=True)
-            with col2:
-                if st.button("🗑️", key=f"delete_cert_{i}"):
-                    st.session_state.certificates.pop(i)
-                    st.rerun()
-    else:
-        st.info("No certificates yet. Complete courses and add them here!")
-
-# ============================================================================
-# PAGE: RESOURCES
+# PAGE: RESOURCES & NEWS
 # ============================================================================
 
 def resources_page():
-    st.markdown('<h1 class="section-title">📚 Learning Resources</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="section-title">📚 Resources & AI News</h1>', unsafe_allow_html=True)
     
-    # Filter
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_category = st.selectbox("Filter by Category",
-                                        ["All"] + list(set(r['category'] for r in RESOURCES)))
-    with col2:
-        search_term = st.text_input("Search resources")
+    tab1, tab2, tab3 = st.tabs(["📖 Learning Resources", "📰 AI News & Trends", "💼 Career Paths"])
     
-    # Display
-    for resource in RESOURCES:
-        if selected_category != "All" and resource['category'] != selected_category:
-            continue
-        if search_term and search_term.lower() not in resource['title'].lower():
-            continue
+    with tab1:
+        st.subheader("Curated Learning Resources")
+        selected_cat = st.selectbox("Filter Category", ["All"] + list(ROADMAP_DATA.keys()))
         
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown(f"""
-            <div class="card">
-                <h4>{resource['title']}</h4>
-                <p><strong>Category:</strong> {resource['category']}</p>
-                <p><strong>Tags:</strong> {", ".join(resource['tags'])}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.link_button("Visit Resource", resource['url'])
-        with col2:
-            if st.button("⭐", key=f"bookmark_{resource['title']}"):
-                if resource['title'] in st.session_state.bookmarked_resources:
-                    st.session_state.bookmarked_resources.discard(resource['title'])
-                else:
-                    st.session_state.bookmarked_resources.add(resource['title'])
-                st.rerun()
+        for res in RESOURCES:
+            if selected_cat == "All" or res['category'] == selected_cat:
+                with st.container():
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.markdown(f"**{res['title']}** ({res['category']})")
+                        st.caption(f"Tags: {', '.join(res['tags'])}")
+                    with col2:
+                        st.link_button("Visit", res['url'])
+                st.divider()
 
-# ============================================================================
-# PAGE: CAREERS
-# ============================================================================
-
-def careers_page():
-    st.markdown('<h1 class="section-title">💼 Career Paths in AI</h1>', unsafe_allow_html=True)
-    
-    for career in CAREER_PATHS:
-        with st.expander(f"**{career['title']}** - {career['salary']}", expanded=False):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Overview")
-                st.write(f"**Salary Range:** {career['salary']}")
-                st.write(f"**Demand Level:** {career['demand']}")
-            
-            with col2:
-                st.subheader("Key Skills")
-                for skill in career['skills']:
-                    st.write(f"• {skill}")
-            
+    with tab2:
+        st.subheader("Latest Artificial Intelligence News")
+        for item in AI_NEWS:
+            with st.container():
+                st.markdown(f"### {item['title']}")
+                st.caption(f"Source: {item['source']} | Date: {item['date']} | Category: {item['category']}")
+                st.write(item['summary'])
+                st.link_button("Read Full Article", item['url'])
             st.divider()
-            
-            st.subheader("Recommended Courses")
-            for course in career['courses']:
-                st.write(f"• {course}")
-            
-            st.subheader("Suggested Projects")
-            for project in career['projects']:
-                st.write(f"• {project}")
 
-# ============================================================================
-# PAGE: NEWS
-# ============================================================================
-
-def news_page():
-    st.markdown('<h1 class="section-title">📰 AI News & Updates</h1>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_category = st.selectbox("Filter by Category",
-                                        ["All"] + list(set(n['category'] for n in AI_NEWS)))
-    with col2:
-        st.write("")
-    
-    for news in AI_NEWS:
-        if selected_category != "All" and news['category'] != selected_category:
-            continue
-        
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown(f"""
-            <div class="card">
-                <h4>{news['title']}</h4>
-                <p><strong>Source:</strong> {news['source']} | <strong>Date:</strong> {news['date']} | <strong>Category:</strong> {news['category']}</p>
-                <p>{news['summary']}</p>
-                <p><em>{news['readTime']}</em></p>
-            </div>
-            """, unsafe_allow_html=True)
-            st.link_button("Read More", news['url'])
-        with col2:
-            if st.button("⭐", key=f"bookmark_news_{news['id']}"):
-                if news['id'] in st.session_state.bookmarked_news:
-                    st.session_state.bookmarked_news.discard(news['id'])
-                else:
-                    st.session_state.bookmarked_news.add(news['id'])
-                st.rerun()
+    with tab3:
+        st.subheader("AI Career Paths & Demands")
+        for career in CAREER_PATHS:
+            with st.expander(f"{career['title']} — Average Salary: {career['salary']} (Demand: {career['demand']})"):
+                st.write(f"**Key Skills:** {', '.join(career['skills'])}")
+                st.write(f"**Recommended Courses:** {', '.join(career['courses'])}")
+                st.write(f"**Suggested Projects:** {', '.join(career['projects'])}")
 
 # ============================================================================
 # PAGE: SETTINGS
 # ============================================================================
 
 def settings_page():
-    st.markdown('<h1 class="section-title">⚙️ Settings</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="section-title">⚙️ Settings & Profile</h1>', unsafe_allow_html=True)
     
-    st.subheader("👤 Student Profile")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.settings['student_name'] = st.text_input(
-            "Student Name",
-            value=st.session_state.settings['student_name']
-        )
-    with col2:
-        st.session_state.settings['degree'] = st.text_input(
-            "Degree Program",
-            value=st.session_state.settings['degree']
-        )
-    
-    st.divider()
-    
-    st.subheader("🎯 Academic Goals")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.settings['target_gpa'] = st.number_input(
-            "Target GPA",
-            value=st.session_state.settings['target_gpa'],
-            min_value=0.0,
-            max_value=4.0,
-            step=0.1
-        )
-    with col2:
-        st.session_state.settings['weekly_study_hours'] = st.number_input(
-            "Weekly Study Goal (hours)",
-            value=st.session_state.settings['weekly_study_hours'],
-            min_value=0.0,
-            step=1.0
-        )
-    
-    st.divider()
-    
-    st.subheader("🎨 Preferences")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.settings['dark_mode'] = st.toggle(
-            "Dark Mode",
-            value=st.session_state.settings['dark_mode']
-        )
-    with col2:
-        st.session_state.settings['sound_effects'] = st.toggle(
-            "Sound Effects",
-            value=st.session_state.settings['sound_effects']
-        )
-    
-    st.divider()
-    
-    st.subheader("🔄 Data Management")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("💾 Export Data", use_container_width=True):
-            export_data = {
-                'assignments': st.session_state.assignments,
-                'study_sessions': st.session_state.study_sessions,
-                'courses': st.session_state.courses,
-                'projects': st.session_state.projects,
-                'certificates': st.session_state.certificates,
-                'settings': st.session_state.settings
-            }
-            st.download_button(
-                label="Download as JSON",
-                data=json.dumps(export_data, indent=2),
-                file_name="ai_hub_data.json",
-                mime="application/json"
-            )
-    
-    with col2:
-        if st.button("🔄 Reset Data", use_container_width=True):
-            if st.button("⚠️ Confirm Reset", use_container_width=True):
-                init_session_state()
-                st.success("All data has been reset!")
-                st.rerun()
-    
-    with col3:
-        if st.button("ℹ️ About", use_container_width=True):
-            st.info("""
-            **AI Students Hub v1.0**
-            
-            A comprehensive learning platform for AI students.
-            
-            Features:
-            • Assignment Tracking
-            • Study Planning
-            • GPA Calculator
-            • Project Portfolio
-            • Certificate Management
-            • Learning Roadmap
-            • Career Guidance
-            • Latest AI News
-            """)
+    with st.form("settings_form"):
+        student_name = st.text_input("Student Name", value=st.session_state.settings['student_name'])
+        degree = st.text_input("Degree Program", value=st.session_state.settings['degree'])
+        target_gpa = st.number_input("Target GPA", min_value=0.0, max_value=4.0, value=float(st.session_state.settings['target_gpa']), step=0.05)
+        weekly_study_hours = st.number_input("Weekly Study Hours Target", min_value=0.0, value=float(st.session_state.settings['weekly_study_hours']), step=1.0)
+        
+        if st.form_submit_button("Save Settings"):
+            st.session_state.settings['student_name'] = student_name
+            st.session_state.settings['degree'] = degree
+            st.session_state.settings['target_gpa'] = target_gpa
+            st.session_state.settings['weekly_study_hours'] = weekly_study_hours
+            st.success("Settings updated successfully!")
+            st.rerun()
 
 # ============================================================================
-# MAIN APP
+# MAIN NAVIGATION SETUP
 # ============================================================================
 
 def main():
-    # Sidebar Navigation
     st.sidebar.title("🎓 AI Students Hub")
-    st.sidebar.write(f"Welcome, {st.session_state.settings['student_name']}!")
+    st.sidebar.markdown(f"**Welcome, {st.session_state.settings['student_name']}!**")
+    st.sidebar.caption(st.session_state.settings['degree'])
+    
     st.sidebar.divider()
     
     page = st.sidebar.radio(
         "Navigation",
-        ["Dashboard", "Assignments", "Roadmap", "Study Planner", "GPA Calculator",
-         "Projects", "Certificates", "Resources", "Careers", "News", "Settings"],
-        label_visibility="collapsed"
+        ["Dashboard", "Assignments", "Roadmap", "Study Planner", "GPA Calculator", "Resources & News", "Settings"]
     )
     
     st.sidebar.divider()
+    st.sidebar.markdown("### Quick Stats")
+    st.sidebar.metric("Assignments Due", len([a for a in st.session_state.assignments if a.get('status') != 'Graded']))
+    st.sidebar.metric("Roadmap Progress", f"{get_roadmap_progress():.1f}%")
     
-    # Display quick stats
-    st.sidebar.subheader("📊 Quick Stats")
-    st.sidebar.metric("Assignments", len(st.session_state.assignments))
-    st.sidebar.metric("Study Sessions", len(st.session_state.study_sessions))
-    gpa_info = calculate_gpa(st.session_state.courses)
-    st.sidebar.metric("GPA", f"{gpa_info['gpa']:.2f}")
-    st.sidebar.metric("Roadmap", f"{get_roadmap_progress():.1f}%")
-    
-    # Route to pages
     if page == "Dashboard":
         dashboard_page()
     elif page == "Assignments":
@@ -1096,16 +795,8 @@ def main():
         study_planner_page()
     elif page == "GPA Calculator":
         gpa_calculator_page()
-    elif page == "Projects":
-        projects_page()
-    elif page == "Certificates":
-        certificates_page()
-    elif page == "Resources":
+    elif page == "Resources & News":
         resources_page()
-    elif page == "Careers":
-        careers_page()
-    elif page == "News":
-        news_page()
     elif page == "Settings":
         settings_page()
 
